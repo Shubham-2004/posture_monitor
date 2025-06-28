@@ -1,16 +1,28 @@
 import streamlit as st
-import cv2
 import numpy as np
-import mediapipe as mp
 import time
 import os
 from dotenv import load_dotenv
+import re
+import math
+
+# Check if running on Streamlit Cloud
+is_streamlit_cloud = os.getenv("STREAMLIT_CLOUD", "false").lower() == "true"
+
+# Conditionally import OpenCV and mediapipe
+if not is_streamlit_cloud:
+    import cv2
+    import mediapipe as mp
+    CLOUD_MODE = False
+else:
+    CLOUD_MODE = True
+    st.warning("Running in cloud mode with limited functionality. For full experience, run locally.")
+
+# Import remaining modules
 from agno.tools.email import EmailTools
 from agno.agent import Agent
 from agno.models.groq import Groq
 from agno.tools.googlesearch import GoogleSearchTools
-import re
-import math
 
 # Load environment variables from .env file
 load_dotenv()
@@ -192,10 +204,110 @@ def main():
     except Exception as e:
         st.error(f"Failed to initialize email agent: {str(e)}")
         email_agent = None
-        
-    # Show message about camera access
-    st.info("⚠️ Note: If you're using this app in a cloud deployment, camera access may be limited. For full functionality, run this app locally.")
 
+    # Check if we're in cloud mode - if so, run demo mode
+    if CLOUD_MODE:
+        st.warning("Running in cloud demo mode. Camera functionality is not available.")
+        # Show static demo image
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        # Draw a sample skeleton on the image
+        # Draw head
+        center = (320, 100)
+        radius = 30
+        color = (200, 200, 200)
+        thickness = 2
+        # Using numpy to draw the circle
+        for i in range(radius - thickness, radius + thickness):
+            for angle in range(0, 360):
+                x = int(center[0] + i * np.cos(np.radians(angle)))
+                y = int(center[1] + i * np.sin(np.radians(angle)))
+                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
+                    image[y, x] = color
+                    
+        # Draw body
+        pt1 = (320, 130)
+        pt2 = (320, 300)
+        thickness = 2
+        # Draw vertical line for body
+        for i in range(-thickness, thickness):
+            x1, y1 = pt1
+            x2, y2 = pt2
+            for t in np.linspace(0, 1, 100):
+                x = int(x1 + t * (x2 - x1) + i)
+                y = int(y1 + t * (y2 - y1))
+                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
+                    image[y, x] = color
+                    
+        # Draw arms
+        pt1 = (250, 180)
+        pt2 = (390, 180)
+        pt3 = (320, 180)
+        # Left arm
+        for i in range(-thickness, thickness):
+            for t in np.linspace(0, 1, 100):
+                x = int(pt3[0] + t * (pt1[0] - pt3[0]))
+                y = int(pt3[1] + t * (pt1[1] - pt3[1]) + i)
+                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
+                    image[y, x] = color
+        # Right arm
+        for i in range(-thickness, thickness):
+            for t in np.linspace(0, 1, 100):
+                x = int(pt3[0] + t * (pt2[0] - pt3[0]))
+                y = int(pt3[1] + t * (pt2[1] - pt3[1]) + i)
+                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
+                    image[y, x] = color
+                    
+        # Draw legs
+        pt1 = (270, 400)
+        pt2 = (370, 400)
+        pt3 = (320, 300)
+        # Left leg
+        for i in range(-thickness, thickness):
+            for t in np.linspace(0, 1, 100):
+                x = int(pt3[0] + t * (pt1[0] - pt3[0]) + i)
+                y = int(pt3[1] + t * (pt1[1] - pt3[1]))
+                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
+                    image[y, x] = color
+        # Right leg
+        for i in range(-thickness, thickness):
+            for t in np.linspace(0, 1, 100):
+                x = int(pt3[0] + t * (pt2[0] - pt3[0]) + i)
+                y = int(pt3[1] + t * (pt2[1] - pt3[1]))
+                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
+                    image[y, x] = color
+                    
+        # Add text
+        font_size = 0.7
+        font_thickness = 2
+        text = "DEMO MODE - CAMERA NOT AVAILABLE"
+        text_size = font_size * len(text) * 7  # Approximate width
+        text_x = int((image.shape[1] - text_size) / 2)
+        # Add text using numpy
+        for i in range(len(text)):
+            char_x = text_x + i * int(font_size * 14)
+            char_y = 30
+            for dx in range(-font_thickness, font_thickness + 1):
+                for dy in range(-font_thickness, font_thickness + 1):
+                    x, y = char_x + dx, char_y + dy
+                    if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
+                        image[y, x] = (255, 255, 255)
+                        
+        FRAME_WINDOW.image(image)
+        
+        # Show posture benefits
+        posture_benefits_container.markdown(
+            format_posture_benefits(),
+            unsafe_allow_html=True
+        )
+        
+        # Set some example metrics
+        good_time_display.metric("Good Posture Time", "N/A")
+        bad_time_display.metric("Bad Posture Time", "N/A")
+        posture_quality.metric("Posture Quality", "N/A")
+        
+        st.info("This is a demonstration mode. For the full posture monitoring experience, please run this application locally.")
+        st.stop()
+        
     # Try to access the camera with better error handling
     try:
         cap = cv2.VideoCapture(0)
