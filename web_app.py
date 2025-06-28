@@ -2,36 +2,45 @@ import streamlit as st
 import numpy as np
 import time
 import os
+from dotenv import load_dotenv
 import re
 import math
-from dotenv import load_dotenv
 
-# Determine if we're on Streamlit Cloud
-def is_running_in_cloud():
-    return os.environ.get("STREAMLIT_SERVER_HEADLESS", "") == "1"
+# More robust cloud detection
+is_streamlit_cloud = (
+    os.getenv("STREAMLIT_CLOUD", "false").lower() == "true" or
+    "STREAMLIT_SHARING_PORT" in os.environ or
+    "STREAMLIT_SERVER_PORT" in os.environ or
+    "STREAMLIT_RUN_ON_SAVE" in os.environ
+)
 
-# Conditionally import cv2 and mediapipe only if not in cloud
-if not is_running_in_cloud():
+# Try to conditionally import OpenCV
+try:
     import cv2
     import mediapipe as mp
-    CLOUD_MODE = False
-else:
-    CLOUD_MODE = True
-    st.warning("Running in cloud mode with limited functionality. Camera and real-time posture monitoring will be disabled.")
+    CV_AVAILABLE = True
+except ImportError:
+    CV_AVAILABLE = False
+    
+# Set cloud mode based on environment and CV availability
+CLOUD_MODE = is_streamlit_cloud or not CV_AVAILABLE
 
-# Safe import for AGNO tools
+if CLOUD_MODE:
+    st.warning("Running in cloud mode with limited functionality. For full experience, run locally.")
+
+# Import remaining modules
 from agno.tools.email import EmailTools
 from agno.agent import Agent
 from agno.models.groq import Groq
 from agno.tools.googlesearch import GoogleSearchTools
 
-# Load .env variables
+# Load environment variables from .env file
 load_dotenv()
 groq_api_key = os.getenv("GROQ_API_KEY")
 if groq_api_key:
     os.environ["GROQ_API_KEY"] = groq_api_key
 else:
-    st.error("GROQ API key not found. Please add it to your .env or environment variables.")
+    st.error("GROQ API key not found. Please add it to your environment variables or .env file.")
 
 # Setup agent for news search
 try:
@@ -57,7 +66,7 @@ def format_news(news_raw):
     health_keywords = ['health', 'posture', 'ergonomic', 'spine', 'back', 'neck', 'wellness', 'pain']
 
     return ''.join(
-        f"<a href='{url}' target='_blank'>{url}</a><br><br>"
+        f"<a href='{url}' target='_blank'>{title}</a><br><small>{url}</small><br><br>"
         for title, url in items
         if any(
             keyword in title.lower() or keyword in url.lower()
@@ -95,6 +104,145 @@ def findAngle(x1, y1, x2, y2):
         return int(180/math.pi * theta)
     except:
         return 0
+
+# Create an interactive demo for cloud mode
+def create_interactive_demo():
+    # Create two demo images for good and bad posture
+    good_posture = np.zeros((480, 640, 3), dtype=np.uint8)
+    bad_posture = np.zeros((480, 640, 3), dtype=np.uint8)
+    
+    # Common drawing parameters
+    color = (200, 200, 200)
+    thickness = 2
+    
+    # Draw head (same position for both)
+    center = (320, 100)
+    radius = 30
+    for i in range(radius - thickness, radius + thickness):
+        for angle in range(0, 360):
+            x = int(center[0] + i * np.cos(np.radians(angle)))
+            y = int(center[1] + i * np.sin(np.radians(angle)))
+            if 0 <= x < good_posture.shape[1] and 0 <= y < good_posture.shape[0]:
+                good_posture[y, x] = color
+                bad_posture[y, x] = color
+    
+    # Draw body - straight for good posture, bent for bad posture
+    # Good posture body
+    pt1_good = (320, 130)
+    pt2_good = (320, 300)
+    for i in range(-thickness, thickness):
+        for t in np.linspace(0, 1, 100):
+            x = int(pt1_good[0] + t * (pt2_good[0] - pt1_good[0]) + i)
+            y = int(pt1_good[1] + t * (pt2_good[1] - pt1_good[1]))
+            if 0 <= x < good_posture.shape[1] and 0 <= y < good_posture.shape[0]:
+                good_posture[y, x] = color
+    
+    # Bad posture body (leaning forward)
+    pt1_bad = (320, 130)
+    pt2_bad = (340, 300)  # leaning forward
+    for i in range(-thickness, thickness):
+        for t in np.linspace(0, 1, 100):
+            x = int(pt1_bad[0] + t * (pt2_bad[0] - pt1_bad[0]) + i)
+            y = int(pt1_bad[1] + t * (pt2_bad[1] - pt1_bad[1]))
+            if 0 <= x < bad_posture.shape[1] and 0 <= y < bad_posture.shape[0]:
+                bad_posture[y, x] = color
+    
+    # Draw arms
+    # Good posture arms
+    pt1 = (250, 180)
+    pt2 = (390, 180)
+    pt3 = (320, 180)
+    # Left arm
+    for i in range(-thickness, thickness):
+        for t in np.linspace(0, 1, 100):
+            x = int(pt3[0] + t * (pt1[0] - pt3[0]))
+            y = int(pt3[1] + t * (pt1[1] - pt3[1]) + i)
+            if 0 <= x < good_posture.shape[1] and 0 <= y < good_posture.shape[0]:
+                good_posture[y, x] = color
+                bad_posture[y, x] = color
+    # Right arm
+    for i in range(-thickness, thickness):
+        for t in np.linspace(0, 1, 100):
+            x = int(pt3[0] + t * (pt2[0] - pt3[0]))
+            y = int(pt3[1] + t * (pt2[1] - pt3[1]) + i)
+            if 0 <= x < good_posture.shape[1] and 0 <= y < good_posture.shape[0]:
+                good_posture[y, x] = color
+                bad_posture[y, x] = color
+    
+    # Draw legs
+    # Good posture legs
+    pt1 = (270, 400)
+    pt2 = (370, 400)
+    pt3_good = (320, 300)
+    # Left leg
+    for i in range(-thickness, thickness):
+        for t in np.linspace(0, 1, 100):
+            x = int(pt3_good[0] + t * (pt1[0] - pt3_good[0]) + i)
+            y = int(pt3_good[1] + t * (pt1[1] - pt3_good[1]))
+            if 0 <= x < good_posture.shape[1] and 0 <= y < good_posture.shape[0]:
+                good_posture[y, x] = color
+    # Right leg
+    for i in range(-thickness, thickness):
+        for t in np.linspace(0, 1, 100):
+            x = int(pt3_good[0] + t * (pt2[0] - pt3_good[0]) + i)
+            y = int(pt3_good[1] + t * (pt2[1] - pt3_good[1]))
+            if 0 <= x < good_posture.shape[1] and 0 <= y < good_posture.shape[0]:
+                good_posture[y, x] = color
+    
+    # Bad posture legs
+    pt3_bad = (340, 300)  # leaning forward
+    # Left leg
+    for i in range(-thickness, thickness):
+        for t in np.linspace(0, 1, 100):
+            x = int(pt3_bad[0] + t * (pt1[0] - pt3_bad[0]) + i)
+            y = int(pt3_bad[1] + t * (pt1[1] - pt3_bad[1]))
+            if 0 <= x < bad_posture.shape[1] and 0 <= y < bad_posture.shape[0]:
+                bad_posture[y, x] = color
+    # Right leg
+    for i in range(-thickness, thickness):
+        for t in np.linspace(0, 1, 100):
+            x = int(pt3_bad[0] + t * (pt2[0] - pt3_bad[0]) + i)
+            y = int(pt3_bad[1] + t * (pt2[1] - pt3_bad[1]))
+            if 0 <= x < bad_posture.shape[1] and 0 <= y < bad_posture.shape[0]:
+                bad_posture[y, x] = color
+    
+    # Add angle labels to good posture
+    # Draw neck angle line for good posture (green)
+    good_posture[100:180, 320:322] = (0, 255, 0)  # vertical line
+    # Draw torso angle line for good posture (green)
+    good_posture[180:300, 320:322] = (0, 255, 0)  # vertical line
+    
+    # Add angle labels to bad posture
+    # Draw neck angle line for bad posture (red)
+    for i in range(100, 180):
+        x = int(320 + (i-100) * 0.3)
+        if 0 <= x < bad_posture.shape[1] and 0 <= i < bad_posture.shape[0]:
+            bad_posture[i, x:x+2] = (0, 0, 255)
+    
+    # Draw torso angle line for bad posture (red)
+    for i in range(180, 300):
+        x = int(320 + (i-180) * 0.1)
+        if 0 <= x < bad_posture.shape[1] and 0 <= i < bad_posture.shape[0]:
+            bad_posture[i, x:x+2] = (0, 0, 255)
+    
+    # Add text labels
+    good_text = "GOOD POSTURE"
+    bad_text = "BAD POSTURE"
+    
+    # Add text to both images
+    if CV_AVAILABLE:
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(good_posture, good_text, (250, 30), font, 0.7, (0, 255, 0), 2)
+        cv2.putText(bad_posture, bad_text, (260, 30), font, 0.7, (0, 0, 255), 2)
+        
+        # Add angle text
+        cv2.putText(good_posture, "Neck angle: 10°", (10, 30), font, 0.6, (0, 255, 0), 2)
+        cv2.putText(good_posture, "Torso angle: 5°", (10, 60), font, 0.6, (0, 255, 0), 2)
+        
+        cv2.putText(bad_posture, "Neck angle: 35°", (10, 30), font, 0.6, (0, 0, 255), 2)
+        cv2.putText(bad_posture, "Torso angle: 15°", (10, 60), font, 0.6, (0, 0, 255), 2)
+    
+    return good_posture, bad_posture
 
 def main():
     st.set_page_config(page_title="AI Posture Monitor", layout="wide")
@@ -206,109 +354,132 @@ def main():
         st.error(f"Failed to initialize email agent: {str(e)}")
         email_agent = None
 
-    # Check if we're in cloud mode - if so, run demo mode
+    # Check if we're in cloud mode - if so, run interactive demo mode
     if CLOUD_MODE:
-        st.warning("Running in cloud demo mode. Camera functionality is not available.")
-        # Show static demo image
-        image = np.zeros((480, 640, 3), dtype=np.uint8)
-        # Draw a sample skeleton on the image
-        # Draw head
-        center = (320, 100)
-        radius = 30
-        color = (200, 200, 200)
-        thickness = 2
-        # Using numpy to draw the circle
-        for i in range(radius - thickness, radius + thickness):
-            for angle in range(0, 360):
-                x = int(center[0] + i * np.cos(np.radians(angle)))
-                y = int(center[1] + i * np.sin(np.radians(angle)))
-                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
-                    image[y, x] = color
-                    
-        # Draw body
-        pt1 = (320, 130)
-        pt2 = (320, 300)
-        thickness = 2
-        # Draw vertical line for body
-        for i in range(-thickness, thickness):
-            x1, y1 = pt1
-            x2, y2 = pt2
-            for t in np.linspace(0, 1, 100):
-                x = int(x1 + t * (x2 - x1) + i)
-                y = int(y1 + t * (y2 - y1))
-                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
-                    image[y, x] = color
-                    
-        # Draw arms
-        pt1 = (250, 180)
-        pt2 = (390, 180)
-        pt3 = (320, 180)
-        # Left arm
-        for i in range(-thickness, thickness):
-            for t in np.linspace(0, 1, 100):
-                x = int(pt3[0] + t * (pt1[0] - pt3[0]))
-                y = int(pt3[1] + t * (pt1[1] - pt3[1]) + i)
-                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
-                    image[y, x] = color
-        # Right arm
-        for i in range(-thickness, thickness):
-            for t in np.linspace(0, 1, 100):
-                x = int(pt3[0] + t * (pt2[0] - pt3[0]))
-                y = int(pt3[1] + t * (pt2[1] - pt3[1]) + i)
-                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
-                    image[y, x] = color
-                    
-        # Draw legs
-        pt1 = (270, 400)
-        pt2 = (370, 400)
-        pt3 = (320, 300)
-        # Left leg
-        for i in range(-thickness, thickness):
-            for t in np.linspace(0, 1, 100):
-                x = int(pt3[0] + t * (pt1[0] - pt3[0]) + i)
-                y = int(pt3[1] + t * (pt1[1] - pt3[1]))
-                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
-                    image[y, x] = color
-        # Right leg
-        for i in range(-thickness, thickness):
-            for t in np.linspace(0, 1, 100):
-                x = int(pt3[0] + t * (pt2[0] - pt3[0]) + i)
-                y = int(pt3[1] + t * (pt2[1] - pt3[1]))
-                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
-                    image[y, x] = color
-                    
-        # Add text
-        font_size = 0.7
-        font_thickness = 2
-        text = "DEMO MODE - CAMERA NOT AVAILABLE"
-        text_size = font_size * len(text) * 7  # Approximate width
-        text_x = int((image.shape[1] - text_size) / 2)
-        # Add text using numpy
-        for i in range(len(text)):
-            char_x = text_x + i * int(font_size * 14)
-            char_y = 30
-            for dx in range(-font_thickness, font_thickness + 1):
-                for dy in range(-font_thickness, font_thickness + 1):
-                    x, y = char_x + dx, char_y + dy
-                    if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
-                        image[y, x] = (255, 255, 255)
-                        
-        FRAME_WINDOW.image(image)
+        st.info("🌟 **Interactive Demo Mode** 🌟 - For full camera functionality, run this app locally.")
         
-        # Show posture benefits
-        posture_benefits_container.markdown(
-            format_posture_benefits(),
-            unsafe_allow_html=True
-        )
+        # Create demo images
+        good_posture, bad_posture = create_interactive_demo()
         
-        # Set some example metrics
-        good_time_display.metric("Good Posture Time", "N/A")
-        bad_time_display.metric("Bad Posture Time", "N/A")
-        posture_quality.metric("Posture Quality", "N/A")
+        # Create placeholders for interactive demo
+        demo_image = st.empty()
+        demo_status = st.empty()
         
-        st.info("This is a demonstration mode. For the full posture monitoring experience, please run this application locally.")
+        # Interactive demo settings
+        posture_type = st.radio("Select posture to visualize:", ["Good Posture", "Bad Posture", "Toggle (Demo)"])
+        
+        if posture_type == "Good Posture":
+            demo_image.image(good_posture)
+            demo_status.success("👍 Good Posture: Spine aligned, neck straight")
+            
+            # Show stats for good posture
+            good_time_display.metric("Good Posture Time", "120.0s")
+            bad_time_display.metric("Bad Posture Time", "0.0s")
+            posture_quality.metric("Posture Quality", "100.0%")
+            
+        elif posture_type == "Bad Posture":
+            demo_image.image(bad_posture)
+            demo_status.error("👎 Bad Posture: Forward head, hunched shoulders")
+            
+            # Show stats for bad posture
+            good_time_display.metric("Good Posture Time", "0.0s")
+            bad_time_display.metric("Bad Posture Time", "25.5s")
+            posture_quality.metric("Posture Quality", "0.0%")
+            
+            # Show posture benefits
+            posture_benefits_container.markdown(
+                format_posture_benefits(),
+                unsafe_allow_html=True
+            )
+            
+        else:  # Toggle mode
+            # Create a loop that simulates posture detection
+            placeholder = st.empty()
+            placeholder.info("Starting demo in 3 seconds...")
+            time.sleep(1)
+            placeholder.info("Starting demo in 2 seconds...")
+            time.sleep(1)
+            placeholder.info("Starting demo in 1 second...")
+            time.sleep(1)
+            placeholder.empty()
+            
+            # Initialize counters
+            cycle_count = 0
+            good_time = 0
+            bad_time = 0
+            total_time = 0
+            current_state = "good"  # Start with good posture
+            
+            # Run for 6 cycles (about 1 minute)
+            while cycle_count < 6:
+                # Show good posture for 5 seconds
+                demo_image.image(good_posture)
+                demo_status.success("👍 Good Posture: Spine aligned, neck straight")
+                posture_benefits_container.empty()  # Clear benefits display
+                
+                # Update stats
+                for i in range(5):
+                    good_time += 1
+                    total_time += 1
+                    quality = (good_time / total_time) * 100 if total_time > 0 else 100
+                    
+                    good_time_display.metric("Good Posture Time", f"{good_time}.0s")
+                    bad_time_display.metric("Bad Posture Time", f"{bad_time}.0s")
+                    posture_quality.metric("Posture Quality", f"{round(quality, 1)}%")
+                    
+                    # Short sleep
+                    time.sleep(1)
+                
+                # Show bad posture for 5 seconds
+                demo_image.image(bad_posture)
+                demo_status.error("👎 Bad Posture: Forward head, hunched shoulders")
+                
+                # Update stats
+                for i in range(5):
+                    bad_time += 1
+                    total_time += 1
+                    quality = (good_time / total_time) * 100 if total_time > 0 else 0
+                    
+                    good_time_display.metric("Good Posture Time", f"{good_time}.0s")
+                    bad_time_display.metric("Bad Posture Time", f"{bad_time}.0s")
+                    posture_quality.metric("Posture Quality", f"{round(quality, 1)}%")
+                    
+                    # Show benefits after 3 seconds of bad posture
+                    if i == 2:
+                        posture_benefits_container.markdown(
+                            format_posture_benefits(),
+                            unsafe_allow_html=True
+                        )
+                    
+                    # Show alert after 4 seconds
+                    if i == 4 and email_agent:
+                        alert_text.warning(f"⚠️ Email alert would be sent to {user_email} for bad posture!")
+                    
+                    # Short sleep
+                    time.sleep(1)
+                
+                cycle_count += 1
+                
+            # After demo loop completes
+            st.success("Demo completed! In the full version, continuous monitoring would occur.")
+            
+        st.write("""
+        ### How this works in the full version:
+        1. The app uses your webcam to track key points on your body
+        2. It calculates neck and torso angles in real-time
+        3. If angles exceed thresholds for too long, you get an email alert
+        4. You can customize sensitivity and timing of alerts
+        
+        Run this app locally on your computer for the full experience with camera access!
+        """)
+        
         st.stop()
         
+    # Local mode with camera access continues below...
+    
+    # The rest of your code remains the same for the local camera version
+    # [rest of your existing code for camera mode]
+    
     # Try to access the camera with better error handling
     try:
         cap = cv2.VideoCapture(0)
