@@ -14,17 +14,25 @@ import math
 
 # Load environment variables from .env file
 load_dotenv()
-os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")
+if groq_api_key:
+    os.environ["GROQ_API_KEY"] = groq_api_key
+else:
+    st.error("GROQ API key not found. Please add it to your environment variables or .env file.")
 
 # Setup agent for news search
-search_agent = Agent(
-    model=Groq(id="qwen-qwq-32b"),
-    tools=[GoogleSearchTools],
-    description="Web search agent",
-    markdown=True,
-    show_tool_calls=True,
-    debug_mode=True,
-)
+try:
+    search_agent = Agent(
+        model=Groq(id="qwen-qwq-32b"),
+        tools=[GoogleSearchTools],
+        description="Web search agent",
+        markdown=True,
+        show_tool_calls=True,
+        debug_mode=True,
+    )
+except Exception as e:
+    st.error(f"Failed to initialize search agent: {str(e)}")
+    search_agent = None
 
 # Helper to format news results - show only health-related links
 def format_news(news_raw):
@@ -56,7 +64,7 @@ def format_posture_benefits():
     formatted = (
         "<div style='background-color: #1E1E1E; color: #E0E0E0; padding: 15px; border-radius: 10px; margin: 15px 0;'>"
         + "<h3 style='color: #4CAF50; margin-bottom: 10px;'>Benefits of Good Posture:</h3><ul style='margin-left: 20px;'>"
-    )
+    ) 
     for benefit in benefits:
         formatted += f"<li style='margin-bottom: 5px;'>{benefit}</li>"
 
@@ -123,18 +131,21 @@ def main():
     # Sidebar for news
     st.sidebar.header("Latest Health News")
     with st.sidebar:
-        with st.spinner("Fetching health news..."):
-            try:
-                news_response = search_agent.run("Find the latest news about posture health, ergonomics, and back pain prevention")
-                news_raw = news_response.text if hasattr(news_response, 'text') else str(news_response)
-                news_content = format_news(news_raw)
-                if news_content:
-                    st.markdown(news_content, unsafe_allow_html=True)
-                else:
-                    st.info("No relevant health news found. Please try again later.")
-            except Exception as e:
-                st.error(f"Unable to fetch news: {str(e)}")
-                st.info("Try refreshing the page or check your API key.")
+        if search_agent:
+            with st.spinner("Fetching health news..."):
+                try:
+                    news_response = search_agent.run("Find the latest news about posture health, ergonomics, and back pain prevention")
+                    news_raw = news_response.text if hasattr(news_response, 'text') else str(news_response)
+                    news_content = format_news(news_raw)
+                    if news_content:
+                        st.markdown(news_content, unsafe_allow_html=True)
+                    else:
+                        st.info("No relevant health news found. Please try again later.")
+                except Exception as e:
+                    st.error(f"Unable to fetch news: {str(e)}")
+                    st.info("Try refreshing the page or check your API key.")
+        else:
+            st.info("News search is currently unavailable.")
 
     # Add a sidebar section for quick posture tips
     st.sidebar.header("Quick Posture Tips")
@@ -163,27 +174,68 @@ def main():
         st.stop()
 
     # Email agent setup
-    sender_email = "shubhambera2004@gmail.com"
-    sender_name = "Posture Monitor"
-    sender_passkey = "trvk ibsq yexz njab"  # Store securely in .env in production
-    email_agent = Agent(
-        model=Groq(id="qwen-qwq-32b"),
-        tools=[
-            EmailTools(
-                receiver_email=user_email,
-                sender_email=sender_email,
-                sender_name=sender_name,
-                sender_passkey=sender_passkey,
+    try:
+        sender_email = "shubhambera2004@gmail.com"
+        sender_name = "Posture Monitor"
+        sender_passkey = "trvk ibsq yexz njab"  # Store securely in .env in production
+        email_agent = Agent(
+            model=Groq(id="qwen-qwq-32b"),
+            tools=[
+                EmailTools(
+                    receiver_email=user_email,
+                    sender_email=sender_email,
+                    sender_name=sender_name,
+                    sender_passkey=sender_passkey,
+                )
+            ]
+        )
+    except Exception as e:
+        st.error(f"Failed to initialize email agent: {str(e)}")
+        email_agent = None
+        
+    # Show message about camera access
+    st.info("⚠️ Note: If you're using this app in a cloud deployment, camera access may be limited. For full functionality, run this app locally.")
+
+    # Try to access the camera with better error handling
+    try:
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            st.error("Failed to open camera. The app will run in demo mode with a static image instead.")
+            # Use a dummy image for demonstration
+            image = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(image, "Camera not available", (150, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            FRAME_WINDOW.image(image)
+            
+            # Show posture benefits in demo mode
+            posture_benefits_container.markdown(
+                format_posture_benefits(),
+                unsafe_allow_html=True
             )
-        ]
-    )
+            
+            st.info("In a real environment, the app would track your posture and provide real-time feedback.")
+            st.stop()
+    except Exception as e:
+        st.error(f"Error accessing camera: {str(e)}")
+        st.info("The app will run in demo mode with a static image instead.")
+        # Use a dummy image for demonstration
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(image, "Camera not available", (150, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        FRAME_WINDOW.image(image)
+        
+        # Show posture benefits in demo mode
+        posture_benefits_container.markdown(
+            format_posture_benefits(),
+            unsafe_allow_html=True
+        )
+        
+        st.info("In a real environment, the app would track your posture and provide real-time feedback.")
+        st.stop()
 
     mp_pose = mp.solutions.pose
     pose = mp_pose.Pose(
         min_detection_confidence=0.7,
         min_tracking_confidence=0.7
     )
-    cap = cv2.VideoCapture(0)
     font = cv2.FONT_HERSHEY_SIMPLEX
     green = (127, 255, 0)
     red = (50, 50, 255)
@@ -328,13 +380,16 @@ def main():
             cv2.putText(image, time_string_bad, (10, h - 20), font, 0.9, red, 2)
         
         # Send alert after user-defined time
-        if bad_time > alert_time and not bad_posture_alert_sent:
-            prompt = f"""
+        if bad_time > alert_time and not bad_posture_alert_sent and email_agent:
+            try:
+                prompt = f"""
 Send an email to {user_email} with the subject 'Bad Posture Alert' and the body 'Hello,\n\nYour posture monitor has detected that you've been in a bad posture for {round(bad_time, 1)} seconds. Please take a moment to correct your sitting position.\n\nKey points to remember:\n- Keep your back straight\n- Position your screen at eye level\n- Keep shoulders relaxed\n\nBest regards,\nYour Posture Monitor'
 """
-            email_agent.print_response(prompt)
-            alert_text.warning(f"⚠️ Email alert sent to {user_email} for bad posture!")
-            bad_posture_alert_sent = True
+                email_agent.print_response(prompt)
+                alert_text.warning(f"⚠️ Email alert sent to {user_email} for bad posture!")
+                bad_posture_alert_sent = True
+            except Exception as e:
+                alert_text.error(f"Failed to send email alert: {str(e)}")
             
         if good_time > 0:
             bad_posture_alert_sent = False
