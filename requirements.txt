@@ -1,34 +1,34 @@
-absl-py
+# Core dependencies
+streamlit
+numpy
+Pillow
+python-dateutil
+python-dotenv
+packaging
+pyparsing
 attrs
-cffi
-contourpy
+six
+
+# OpenCV (no GUI issues)
+opencv-python-headless
+
+# Visualization
+matplotlib
 cycler
-flatbuffers
+contourpy
 fonttools
 kiwisolver
-matplotlib
+
+# Media & processing
 mediapipe
-numpy
-packaging
-Pillow
-protobuf
-pycparser
-pyparsing
-python-dateutil
-six
 sounddevice
-streamlit
-opencv-python-headless
-mediapipe
-numpy
-python-dotenv
-agno
-groq
+cffi
+pycparser
+flatbuffers
+protobuf
 
-# Agentic part
-
+# Agentic / AI-related
 agno
-python-dotenv
 groq
 googlesearch-python
 pycountry
