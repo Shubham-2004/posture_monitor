@@ -2,35 +2,36 @@ import streamlit as st
 import numpy as np
 import time
 import os
-from dotenv import load_dotenv
 import re
 import math
+from dotenv import load_dotenv
 
-# Check if running on Streamlit Cloud
-is_streamlit_cloud = os.getenv("STREAMLIT_CLOUD", "false").lower() == "true"
+# Determine if we're on Streamlit Cloud
+def is_running_in_cloud():
+    return os.environ.get("STREAMLIT_SERVER_HEADLESS", "") == "1"
 
-# Conditionally import OpenCV and mediapipe
-if not is_streamlit_cloud:
+# Conditionally import cv2 and mediapipe only if not in cloud
+if not is_running_in_cloud():
     import cv2
     import mediapipe as mp
     CLOUD_MODE = False
 else:
     CLOUD_MODE = True
-    st.warning("Running in cloud mode with limited functionality. For full experience, run locally.")
+    st.warning("Running in cloud mode with limited functionality. Camera and real-time posture monitoring will be disabled.")
 
-# Import remaining modules
+# Safe import for AGNO tools
 from agno.tools.email import EmailTools
 from agno.agent import Agent
 from agno.models.groq import Groq
 from agno.tools.googlesearch import GoogleSearchTools
 
-# Load environment variables from .env file
+# Load .env variables
 load_dotenv()
 groq_api_key = os.getenv("GROQ_API_KEY")
 if groq_api_key:
     os.environ["GROQ_API_KEY"] = groq_api_key
 else:
-    st.error("GROQ API key not found. Please add it to your environment variables or .env file.")
+    st.error("GROQ API key not found. Please add it to your .env or environment variables.")
 
 # Setup agent for news search
 try:
